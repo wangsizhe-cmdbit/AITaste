@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <link rel="stylesheet" href="./css/element.css">
+  <link rel="stylesheet" href="./css/search.css">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+</head>
+<body>
+<div id="app">
+  <!-- 顶部搜索栏（可输入） -->
+  <div class="search-header">
+    <div class="back-btn" @click="goBack">
+      <i class="el-icon-arrow-left"></i>
+    </div>
+    <div class="search-input-wrapper">
+      <el-input
+        v-model="searchKeyword"
+        size="small"
+        placeholder="请输入商户名、地点"
+        clearable
+        @keyup.enter.native="doNewSearch"
+        @clear="doNewSearch"
+      >
+        <i slot="prefix" class="el-input__icon el-icon-search" @click="doNewSearch"></i>
+      </el-input>
+    </div>
+  </div>
+
+  <!-- 店铺列表（升级版卡片） -->
+  <div class="shop-list" v-loading="loading && current === 1" element-loading-text="搜索中...">
+    <div v-if="shopList.length === 0 && !loading" class="empty-result">
+      <i class="el-icon-search" style="font-size: 48px;"></i>
+      <p>没有找到相关商户</p>
+      <p style="font-size: 12px;">试试其他关键词吧</p>
+    </div>
+    <div v-for="shop in shopList" :key="shop.id" class="shop-card" @click="toShopDetail(shop.id)">
+      <div class="shop-img">
+        <img :src="shop.images ? (shop.images.split(',')[0]) : '/imgs/default-shop.png'" alt="店铺图片">
+      </div>
+      <div class="shop-info">
+        <div class="shop-title shop-item">{{ shop.name }}</div>
+        <div class="shop-rate shop-item">
+          <el-rate
+            disabled
+            v-model="shop.score / 10"
+            text-color="#F63"
+            show-score
+          ></el-rate>
+          <span>{{ shop.comments || 0 }}条</span>
+        </div>
+        <div class="shop-area shop-item">
+          <span>{{ shop.area || '暂无区域' }}</span>
+          <span v-if="shop.distance">
+            {{ shop.distance < 1000 ? shop.distance.toFixed(1) + 'm' : (shop.distance/1000).toFixed(1) + 'km' }}
+          </span>
+        </div>
+        <div class="shop-avg shop-item">￥{{ shop.avgPrice || 0 }}/人</div>
+        <div class="shop-address shop-item">
+          <i class="el-icon-map-location"></i>
+          <span>{{ shop.address || '地址暂无' }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 加载更多 -->
+    <div v-if="loading && current > 1" class="loading-more">
+      <i class="el-icon-loading"></i> 加载中...
+    </div>
+    <div v-if="!hasMore && shopList.length > 0" class="no-more">—— 已经到底了 ——</div>
+    <div v-if="hasMore && !loading && shopList.length > 0" class="load-more-btn" @click="loadMore">点击加载更多</div>
+  </div>
+  <!-- 聊天窗口 -->
+  <div class="chat-widget" v-show="showChat" @click.stop>
+    <div class="chat-header">
+      <span>智能助手</span>
+      <i class="el-icon-close" @click="showChat = false"></i>
+    </div>
+    <div class="chat-messages" ref="chatMessages">
+      <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.role">
+        <div v-if="msg.role === 'user'" class="user-message">{{ msg.content }}</div>
+        <div v-else-if="msg.role === 'bot'" class="bot-message">
+          <!-- 显示文本内容（支持换行） -->
+          <div style="white-space: pre-wrap;">{{ msg.content }}</div>
+          <!-- 新增：如果有二维码内容，则渲染二维码图片 -->
+          <div v-if="msg.qrCode" :id="'qr-' + msg.id" class="qr-in-chat"></div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <button class="voice-btn" @click="startVoiceInput" :disabled="isRecording">
+        <i class="el-icon-microphone"></i>
+      </button>
+      <input type="text" v-model="inputText" @keyup.enter="sendMessage" placeholder="说句话或打字..." />
+      <button @click="sendMessage">发送</button>
+    </div>
+  </div>
+  <div class="guide-bubble" v-show="showGuideBubble" @click="openChatAndGuide">
+    <span>{{ guideText }}</span>
+  </div>
+  <button class="open-chat-btn" @click="showChat = true">🤖</button>
+</div>
+
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="./js/common.js"></script>
+<script>
+  Vue.use(ELEMENT);
+
+  const PAGE_SIZE = 10;
+
+  new Vue({
+    el: '#app',
+    data: {
+      keyword: '',
+      searchKeyword: '',
+      shopList: [],
+      current: 1,
+      loading: false,
+      hasMore: true,
+      showChat: false,        // 是否显示聊天窗口
+      messages: [],           // 聊天记录
+      inputText: '',          // 输入框内容
+      isRecording: false,     // 是否正在录音
+      recognition: null,      // 语音识别对象
+      sessionId: Date.now().toString(),  // 会话ID（用于后端记忆）
+      userId: null,
+      showGuideBubble: false,    // 控制气泡显示
+      idleTimer: null,           // 计时器ID
+      guideText: '需要帮忙找餐厅吗？',
+      guideAutoQuery: '帮我推荐餐厅',
+      guideReady: false,
+    },
+    mounted() {
+      this.userId = this.getUserId();
+      // 先获取引导语，成功后再启动空闲计时器
+      this.fetchGuideText().then(() => {
+        this.startIdleTimer();
+      }).catch(() => {
+      // 即使失败也启动计时器（使用默认文字）
+      this.startIdleTimer();
+      });
+      // 监听用户活动事件
+      window.addEventListener('touchstart', this.resetIdleTimer);
+      window.addEventListener('scroll', this.resetIdleTimer);
+      // 初始化语音识别
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = 'zh-CN';          // 中文
+        this.recognition.interimResults = false;   // 只返回最终结果
+        this.recognition.maxAlternatives = 1;
+
+        this.recognition.onstart = () => {
+          console.log('语音识别开始');
+        };
+
+        this.recognition.onresult = (event) => {
+          const text = event.results[0][0].transcript;
+          console.log('识别结果：', text);
+          this.inputText = text;        // 将识别结果填入输入框
+          this.sendMessage();           // 自动发送
+          this.isRecording = false;
+        };
+
+        this.recognition.onerror = (event) => {
+          console.error('语音识别错误', event.error);
+          this.$message.error('语音识别失败，请重试');
+          this.isRecording = false;
+        };
+
+        this.recognition.onend = () => {
+        this.isRecording = false;
+        };
+      } else {
+        console.warn('当前浏览器不支持语音识别');
+        this.$message.warning('您的浏览器不支持语音输入');
+      }
+      const urlParams = new URLSearchParams(window.location.search);
+      this.keyword = urlParams.get('keyword') || '';
+      this.searchKeyword = this.keyword;
+      if (this.keyword) {
+        this.searchShops(true);
+      } else {
+        this.$message.warning('请输入搜索关键词');
+      }
+      window.addEventListener('scroll', this.handleScroll);
+    },
+    beforeDestroy() {
+      // 清理定时器
+      if (this.idleTimer) clearTimeout(this.idleTimer);
+      // 移除首页事件监听
+      window.removeEventListener('touchstart', this.resetIdleTimer);
+      window.removeEventListener('scroll', this.resetIdleTimer);
+      // 移除搜索结果页滚动监听
+      window.removeEventListener('scroll', this.handleScroll);
+    },
+    methods: {
+         // 启动空闲计时器
+      startIdleTimer() {
+        if (this.idleTimer) clearTimeout(this.idleTimer);
+          this.idleTimer = setTimeout(() => {
+            // 只有在聊天窗口关闭且气泡未显示时，才显示气泡
+            if (!this.showChat && !this.showGuideBubble) {
+              this.showGuideBubble = true;
+            }
+          }, 5000);
+      },
+      resetIdleTimer() {
+        // 聊天窗口打开时，不重置计时器（避免到期后误判）
+        if (this.showChat) return;
+        if (this.showGuideBubble) return;
+        if (this.idleTimer) {
+          clearTimeout(this.idleTimer);
+          this.idleTimer = null;
+        }
+        this.startIdleTimer();
+      },
+      getUserId() {
+        let userId = localStorage.getItem('userId');
+        // 如果不存在，或者包含小数点（旧格式），则重新生成
+        if (!userId || userId.includes('.')) {
+          userId = Date.now() + '' + Math.floor(Math.random() * 10000);
+          localStorage.setItem('userId', userId);
+        }  
+        return userId;
+      },
+      fetchGuideText() {
+        const token = sessionStorage.getItem('token');
+        const url = `/api/ai/guide/home?userId=${this.userId}`;
+        console.log('请求URL:', url);
+        // 必须 return fetch 返回的 Promise
+        return fetch(url, { 
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' ,
+                    'authorization': token   
+                   }
+        })
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          return response.json();
+        })
+        .then(data => {
+          console.log('引导语响应数据:', data);
+          if (data && data.guideText) {
+            this.guideText = data.guideText;
+            this.guideAutoQuery = data.autoQuery || '帮我推荐餐厅';
+          }
+        })
+        .catch(err => {
+          console.error('获取引导语失败:', err);
+        });
+      },
+      openChatAndGuide() {
+        this.showChat = true;
+        this.showGuideBubble = false;
+        if (this.idleTimer) {
+          clearTimeout(this.idleTimer);
+          this.idleTimer = null;
+        }
+        if (this.messages.length === 0) {
+          this.inputText = this.guideAutoQuery;
+          this.sendMessage();
+        }
+      },
+      closeChat() {
+        this.showChat = false;
+        // 关闭聊天窗口后，重新启动空闲计时器（让气泡可以再次出现）
+        if (!this.showGuideBubble && !this.idleTimer) {
+          this.startIdleTimer();
+        }
+      },
+      startVoiceInput() {
+        if (!this.recognition) {
+           this.$message.error('浏览器不支持语音输入');
+           return;
+         }
+        if (this.isRecording) return;
+           this.isRecording = true;
+           this.recognition.start();
+      },
+      sendMessage() {
+      const token = sessionStorage.getItem('token');
+      const userMsg= this.inputText.trim();
+      if (!userMsg) return;
+      // 添加用户消息到聊天记录
+      this.messages.push({
+        id: Date.now(),
+        role: 'user',
+        content: userMsg
+      });
+      this.inputText = '';
+
+      const botMsgId = Date.now() + 1;
+      this.messages.push({
+         id: botMsgId,
+         role: 'bot',
+         content: ''
+      });
+
+      const botMsg = this.messages[this.messages.length - 1];
+
+      // 构建请求体，符合后端 ChatRequest
+      const requestBody = {
+        query: userMsg,
+        sessionId: this.sessionId,
+        userId: parseInt(this.userId),
+        context: { source: 'guide_bubble' }  // 可根据需要修改 source
+      };
+      // 调用后端 AI 接口（假设已有 /ai/chat）
+      fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' ,
+                   'authorization': token
+                 },
+        body: JSON.stringify(requestBody)
+      })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+  
+          // 按行分割
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // 保留最后一行可能不完整
+  
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const content = line.slice(5).trim(); // 去掉 "data:" 前缀并 trim
+              if (content) {
+                botMsg.content += content;
+                this.$forceUpdate();
+                // 滚动到底部
+                this.$nextTick(() => {
+                  const container = this.$refs.chatMessages;
+                  if (container) container.scrollTop = container.scrollHeight;
+                });
+              }
+            }
+          }
+        }
+        // 所有数据接收完毕，统一格式化（只执行一次）
+        // 所有数据接收完毕
+        botMsg.content = botMsg.content
+        .replace(/(\d+\.)/g, '\n$1')        // 数字编号前加换行
+        .replace(/\*\*/g, '')
+        .replace(/###+/g, '\n\n')
+        .replace(/##+/g, '\n\n')
+        .replace(/\s*-\s*/g, '\n')
+        .replace(/\n{3,}/g, '\n\n');
+
+         // ========== 新增：检测并提取二维码内容 ==========
+        // 匹配类似 "VOUCHER_123456789" 的字符串（可根据你的实际格式调整）
+        const qrMatch = botMsg.content.match(/VOUCHER_\d+/);
+        if (qrMatch) {
+          botMsg.qrCode = qrMatch[0];
+          // 可选：从消息内容中移除二维码字符串，避免重复显示
+          botMsg.content = botMsg.content.replace(qrMatch[0], '').replace(/：$/, '').trim();
+          if (botMsg.content === '') {
+            botMsg.content = '请出示以下二维码给店员扫码核销：';
+          }
+        }
+        // ===============================================
+        this.$forceUpdate();
+         // 新增：如果有二维码，在DOM渲染后生成二维码图片
+        if (botMsg.qrCode) {
+          this.$nextTick(() => {
+            const container = document.getElementById('qr-' + botMsg.id);
+            if (container) {
+              // 清空可能残留的内容
+              container.innerHTML = '';
+              new QRCode(container, {
+                text: botMsg.qrCode,
+                width: 150,
+                height: 150,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.L
+              });
+            }
+          });
+        }
+      })
+      .catch(err => {
+        console.error('流式请求失败:', err);
+        // 如果出错且 bot 消息内容仍为空，显示错误提示
+        if (botMsg.content === '') {
+          botMsg.content = '抱歉，服务暂时不可用，请稍后重试。';
+          this.$forceUpdate();
+        } else {
+          this.$message.error('网络错误');
+        }
+      })
+      },
+      goBack() {
+        history.back();
+      },
+      toShopDetail(id) {
+        location.href = `/shop-detail.html?id=${id}`;
+      },
+      doNewSearch() {
+        const newKeyword = this.searchKeyword.trim();
+        if (!newKeyword) {
+          this.$message.warning('请输入搜索关键词');
+          return;
+        }
+        if (newKeyword === this.keyword) return;
+        this.keyword = newKeyword;
+        const newUrl = `${window.location.pathname}?keyword=${encodeURIComponent(this.keyword)}`;
+        window.history.replaceState({}, '', newUrl);
+        this.current = 1;
+        this.shopList = [];
+        this.hasMore = true;
+        this.searchShops(true);
+      },
+      async searchShops(reset = true) {
+        if (reset) {
+          this.current = 1;
+          this.shopList = [];
+          this.hasMore = true;
+        }
+        if (!this.keyword) return;
+  
+        this.loading = true;
+        try {
+          const response = await axios.get('/shop/of/name', {
+            params: {
+              keyword: this.keyword,   
+              page: this.current,      
+              size: PAGE_SIZE,         
+              userId: this.userId      
+            }
+          });
+          let raw = response.data;
+          let newList = [];
+          if (raw && typeof raw === 'object') {
+            if (raw.data !== undefined) {
+                newList = raw.data;
+                if (newList && newList.records) newList = newList.records;
+            } else if (Array.isArray(raw)) {
+                newList = raw;
+            } else if (raw.records) {
+                newList = raw.records;
+            }
+          } else if (Array.isArray(raw)) {
+              newList = raw;
+          }
+          if (reset) {
+            this.shopList = newList;
+          } else {
+              this.shopList = this.shopList.concat(newList);
+          }
+          this.hasMore = newList.length === PAGE_SIZE;
+        } catch (error) {
+          console.error('搜索失败', error);
+          this.$message.error('搜索失败，请重试');
+        } finally {
+          this.loading = false;
+        }
+      },
+      loadMore() {
+        if (this.loading || !this.hasMore) return;
+        this.current++;
+        this.searchShops(false);
+      },
+      handleScroll() {
+        const scrollTop = document.documentElement.scrollTop || document.body.scrollTop;
+        const windowHeight = window.innerHeight;
+        const documentHeight = document.documentElement.scrollHeight;
+        if (scrollTop + windowHeight >= documentHeight - 100 && !this.loading && this.hasMore) {
+          this.loadMore();
+        }
+      }
+    }
+  });
+</script>
+</body>
+</html>

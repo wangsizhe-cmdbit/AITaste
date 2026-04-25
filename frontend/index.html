@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <!-- 引入样式 -->
+  <link rel="stylesheet" href="./css/element.css">
+  <link href="./css/index.css" rel="stylesheet">
+  <link href="./css/main.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+
+  <style type="text/css">
+      .el-input__inner {
+          border-radius: 20px;
+      }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div class="search-bar">
+    <div class="city-btn">西安 <i class="el-icon-arrow-down"></i></div>
+    <div class="search-input">
+      <el-input 
+        size="mini" 
+        placeholder="请输入商户名、地点"
+        v-model="searchKeyword"
+        @keyup.enter.native="doSearch"
+        clearable
+        >
+        <i slot="prefix" class="el-input__icon el-icon-search" @click="doSearch"></i>
+      </el-input>
+    </div>
+    <div class="header-icon" @click="toPage(4)"><i class="el-icon-user"></i></div>
+  </div>
+  <!-- AI 智选模块 -->
+  <div class="ai-smart-pick" v-if="smartPicks.length || smartPicksLoading">
+  <div class="section-title">
+    <span class="title-icon">🤖</span>
+    <span class="title-text">AI 智选 · 今日推荐</span>
+    <span class="ai-badge">✨ 根据你的口味生成</span>
+  </div>
+  <!-- 有数据时显示横向滚动 -->
+  <div class="horizontal-scroll" v-if="smartPicks.length">
+    <div class="shop-card" v-for="shop in smartPicks" :key="shop.shopId" @click="toShopDetail(shop.shopId)">
+      <img :src="shop.coverUrl" class="shop-cover" @error="imgError" />
+      <div class="shop-info">
+        <div class="shop-name">{{ shop.name }}</div>
+        <div class="shop-tag">{{ shop.tasteTag }}</div>
+        <div class="shop-price">¥{{ shop.avgPrice }}/人</div>
+        <div class="shop-distance" v-if="shop.distance">距您 {{ formatDistance(shop.distance) }}</div>
+        <div class="shop-reason"><i class="el-icon-magic-stick"></i> {{ shop.reason }}</div>
+      </div>
+    </div>
+  </div>
+  <!-- 加载中占位符 -->
+  <div v-else-if="smartPicksLoading" class="loading-placeholder">
+    <i class="el-icon-loading"></i> AI 智选正在为您生成推荐...
+  </div>
+  </div>
+  <div class="blog-list" @scroll="onScroll">
+    <div class="blog-box" v-for="b in blogs" :key="b.id">
+      <div class="blog-img" @click="toBlogDetail(b)"><img :src="b.img" alt=""></div>
+      <div class="blog-title">{{b.title}}</div>
+      <div class="blog-foot">
+        <div class="blog-user-icon"><img :src="b.icon || '/imgs/icons/default-icon.png'" alt=""></div>
+        <div class="blog-user-name">{{b.name}}</div>
+        <div class="blog-liked" @click="addLike(b)">
+          <svg t="1646634642977" class="icon" viewBox="0 0 1024 1024" version="1.1" xmlns="http://www.w3.org/2000/svg" p-id="2187" width="14" height="14">
+            <path d="M160 944c0 8.8-7.2 16-16 16h-32c-26.5 0-48-21.5-48-48V528c0-26.5 21.5-48 48-48h32c8.8 0 16 7.2 16 16v448zM96 416c-53 0-96 43-96 96v416c0 53 43 96 96 96h96c17.7 0 32-14.3 32-32V448c0-17.7-14.3-32-32-32H96zM505.6 64c16.2 0 26.4 8.7 31 13.9 4.6 5.2 12.1 16.3 10.3 32.4l-23.5 203.4c-4.9 42.2 8.6 84.6 36.8 116.4 28.3 31.7 68.9 49.9 111.4 49.9h271.2c6.6 0 10.8 3.3 13.2 6.1s5 7.5 4 14l-48 303.4c-6.9 43.6-29.1 83.4-62.7 112C815.8 944.2 773 960 728.9 960h-317c-33.1 0-59.9-26.8-59.9-59.9v-455c0-6.1 1.7-12 5-17.1 69.5-109 106.4-234.2 107-364h41.6z m0-64h-44.9C427.2 0 400 27.2 400 60.7c0 127.1-39.1 251.2-112 355.3v484.1c0 68.4 55.5 123.9 123.9 123.9h317c122.7 0 227.2-89.3 246.3-210.5l47.9-303.4c7.8-49.4-30.4-94.1-80.4-94.1H671.6c-50.9 0-90.5-44.4-84.6-95l23.5-203.4C617.7 55 568.7 0 505.6 0z" p-id="2188" :fill="b.isLike ? '#ff6633' : '#82848a'"></path>
+          </svg>
+          {{b.liked}}
+        </div>
+      </div>
+
+    </div>
+    <div v-if="loadingMore" class="load-more">加载中...</div>
+    <div v-if="noMore" class="load-more">—— 没有更多了 ——</div>
+  </div>
+  <foot-bar :active-btn="1"></foot-bar>
+  <!-- 聊天窗口 -->
+  <div class="chat-widget" v-show="showChat" @click.stop>
+    <div class="chat-header">
+      <span>智能助手</span>
+      <i class="el-icon-close" @click="showChat = false"></i>
+    </div>
+    <div class="chat-messages" ref="chatMessages">
+      <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.role">
+        <div v-if="msg.role === 'user'" class="user-message">{{ msg.content }}</div>
+        <div v-else-if="msg.role === 'bot'" class="bot-message">
+          <!-- 显示文本内容（支持换行） -->
+          <div style="white-space: pre-wrap;">{{ msg.content }}</div>
+          <!-- 新增：如果有二维码内容，则渲染二维码图片 -->
+          <div v-if="msg.qrCode" :id="'qr-' + msg.id" class="qr-in-chat"></div>
+        </div>
+      </div>
+    </div>
+    <div class="chat-input">
+      <button class="voice-btn" @click="startVoiceInput" :disabled="isRecording">
+        <i class="el-icon-microphone"></i>
+      </button>
+      <input type="text" v-model="inputText" @keyup.enter="sendMessage" placeholder="说句话或打字..." />
+      <button @click="sendMessage">发送</button>
+    </div>
+  </div>
+  <div class="guide-bubble" v-show="showGuideBubble" @click="openChatAndGuide">
+    <span>{{ guideText }}</span>
+  </div>
+  <button class="open-chat-btn" @click="showChat = true">🤖</button>
+</div>
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<!-- 引入组件库 -->
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/footer.js"></script>
+<script>
+  Vue.use(ELEMENT);
+
+  const app = new Vue({
+    el: "#app",
+    data: {
+      isReachBottom: false,
+      types: [], // 类型列表
+      blogs: [], // 播客列表
+      current: 1,// blog的页码
+      showChat: false,        // 是否显示聊天窗口
+      messages: [],           // 聊天记录
+      inputText: '',          // 输入框内容
+      isRecording: false,     // 是否正在录音
+      recognition: null,      // 语音识别对象
+      sessionId: Date.now().toString(),  // 会话ID（用于后端记忆）
+      userId: null,
+      showGuideBubble: false,    // 控制气泡显示
+      idleTimer: null,           // 计时器ID
+      guideText: '需要帮忙找餐厅吗？',
+      guideAutoQuery: '帮我推荐餐厅',
+      guideReady: false,
+      searchKeyword: '',
+      smartPicks: [],
+      loadingMore: false,   // 新增
+      noMore: false,         // 新增
+      smartPicksLoading: false,
+    },
+    created() {
+      this.queryHotBlogsScroll();
+    },
+    mounted() {
+      this.userId = this.getUserId();
+      // 先获取引导语，成功后再启动空闲计时器
+      this.fetchGuideText().then(() => {
+        this.startIdleTimer();
+      }).catch(() => {
+      // 即使失败也启动计时器（使用默认文字）
+      this.startIdleTimer();
+      });
+      // 监听用户活动事件
+      window.addEventListener('touchstart', this.resetIdleTimer);
+      window.addEventListener('scroll', this.resetIdleTimer);
+      this.fetchAiSmartPick();
+      // 初始化语音识别
+      if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        this.recognition = new SpeechRecognition();
+        this.recognition.lang = 'zh-CN';          // 中文
+        this.recognition.interimResults = false;   // 只返回最终结果
+        this.recognition.maxAlternatives = 1;
+
+        this.recognition.onstart = () => {
+          console.log('语音识别开始');
+        };
+
+        this.recognition.onresult = (event) => {
+          const text = event.results[0][0].transcript;
+          console.log('识别结果：', text);
+          this.inputText = text;        // 将识别结果填入输入框
+          this.sendMessage();           // 自动发送
+          this.isRecording = false;
+        };
+
+        this.recognition.onerror = (event) => {
+          console.error('语音识别错误', event.error);
+          this.$message.error('语音识别失败，请重试');
+          this.isRecording = false;
+        };
+
+        this.recognition.onend = () => {
+        this.isRecording = false;
+        };
+      } else {
+        console.warn('当前浏览器不支持语音识别');
+        this.$message.warning('您的浏览器不支持语音输入');
+      }
+    },
+    beforeDestroy() {
+    if (this.idleTimer) clearTimeout(this.idleTimer);
+    window.removeEventListener('touchstart', this.resetIdleTimer);
+    window.removeEventListener('scroll', this.resetIdleTimer);
+    },
+    methods: {
+      // 启动空闲计时器
+      startIdleTimer() {
+        if (this.idleTimer) clearTimeout(this.idleTimer);
+          this.idleTimer = setTimeout(() => {
+            // 只有在聊天窗口关闭且气泡未显示时，才显示气泡
+            if (!this.showChat && !this.showGuideBubble) {
+              this.showGuideBubble = true;
+            }
+          }, 5000);
+      },
+      resetIdleTimer() {
+        // 聊天窗口打开时，不重置计时器（避免到期后误判）
+        if (this.showChat) return;
+        if (this.showGuideBubble) return;
+        if (this.idleTimer) {
+          clearTimeout(this.idleTimer);
+          this.idleTimer = null;
+        }
+        this.startIdleTimer();
+      },
+      getUserId() {
+        let userId = localStorage.getItem('userId');
+        return userId;
+      },
+      fetchGuideText() {
+        const token = sessionStorage.getItem('token');
+        this.userId = this.getUserId();
+        const url = `/api/ai/guide/home?userId=${this.userId}`;
+        console.log('请求URL:', url);
+        // 必须 return fetch 返回的 Promise
+        return fetch(url, { 
+          method: 'GET',
+          headers: { 'Content-Type': 'application/json' ,
+                    'authorization': token   
+                   }
+        })
+        .then(response => {
+          if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+          return response.json();
+        })
+        .then(data => {
+          console.log('引导语响应数据:', data);
+          if (data && data.guideText) {
+            this.guideText = data.guideText;
+            this.guideAutoQuery = data.autoQuery || '帮我推荐餐厅';
+          }
+        })
+        .catch(err => {
+          console.error('获取引导语失败:', err);
+        });
+      },
+      openChatAndGuide() {
+        this.showChat = true;
+        this.showGuideBubble = false;
+        if (this.idleTimer) {
+          clearTimeout(this.idleTimer);
+          this.idleTimer = null;
+        }
+        if (this.messages.length === 0) {
+          this.inputText = this.guideAutoQuery;
+          this.sendMessage();
+        }
+      },
+      closeChat() {
+        this.showChat = false;
+        // 关闭聊天窗口后，重新启动空闲计时器（让气泡可以再次出现）
+        if (!this.showGuideBubble && !this.idleTimer) {
+          this.startIdleTimer();
+        }
+      },
+      startVoiceInput() {
+        if (!this.recognition) {
+           this.$message.error('浏览器不支持语音输入');
+           return;
+         }
+        if (this.isRecording) return;
+           this.isRecording = true;
+           this.recognition.start();
+      },
+      sendMessage() {
+      const token = sessionStorage.getItem('token');
+      const userMsg= this.inputText.trim();
+      if (!userMsg) return;
+      // 添加用户消息到聊天记录
+      this.messages.push({
+        id: Date.now(),
+        role: 'user',
+        content: userMsg
+      });
+      this.inputText = '';
+
+      const botMsgId = Date.now() + 1;
+      this.messages.push({
+         id: botMsgId,
+         role: 'bot',
+         content: '',
+         qrCode: null    // 新增字段
+      });
+
+      const botMsg = this.messages[this.messages.length - 1];
+
+      // 构建请求体，符合后端 ChatRequest
+      const requestBody = {
+        query: userMsg,
+        sessionId: this.sessionId,
+        userId: parseInt(this.userId),
+        context: { source: 'guide_bubble' }  // 可根据需要修改 source
+      };
+      // 调用后端 AI 接口（假设已有 /ai/chat）
+      fetch('/api/ai/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' ,
+                   'authorization': token   
+                 },
+        body: JSON.stringify(requestBody)
+      })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder('utf-8');
+        let buffer = '';
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+  
+          // 按行分割
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // 保留最后一行可能不完整
+  
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              const content = line.slice(5).trim(); // 去掉 "data:" 前缀并 trim
+              if (content) {
+                botMsg.content += content;
+                this.$forceUpdate();
+                // 滚动到底部
+                this.$nextTick(() => {
+                  const container = this.$refs.chatMessages;
+                  if (container) container.scrollTop = container.scrollHeight;
+                });
+              }
+            }
+          }
+        }
+        // 所有数据接收完毕，统一格式化（只执行一次）
+        // 所有数据接收完毕
+        botMsg.content = botMsg.content
+        .replace(/(\d+\.)/g, '\n$1')        // 数字编号前加换行
+        .replace(/\*\*/g, '')
+        .replace(/###+/g, '\n\n')
+        .replace(/##+/g, '\n\n')
+        .replace(/\s*-\s*/g, '\n')
+        .replace(/\n{3,}/g, '\n\n');
+
+         // ========== 新增：检测并提取二维码内容 ==========
+        // 匹配类似 "VOUCHER_123456789" 的字符串（可根据你的实际格式调整）
+        const qrMatch = botMsg.content.match(/VOUCHER_\d+/);
+        if (qrMatch) {
+          botMsg.qrCode = qrMatch[0];
+          // 可选：从消息内容中移除二维码字符串，避免重复显示
+          botMsg.content = botMsg.content.replace(qrMatch[0], '').replace(/：$/, '').trim();
+          if (botMsg.content === '') {
+            botMsg.content = '请出示以下二维码给店员扫码核销：';
+          }
+        }
+        // ===============================================
+        this.$forceUpdate();
+         // 新增：如果有二维码，在DOM渲染后生成二维码图片
+        if (botMsg.qrCode) {
+          this.$nextTick(() => {
+            const container = document.getElementById('qr-' + botMsg.id);
+            if (container) {
+              // 清空可能残留的内容
+              container.innerHTML = '';
+              new QRCode(container, {
+                text: botMsg.qrCode,
+                width: 150,
+                height: 150,
+                colorDark: "#000000",
+                colorLight: "#ffffff",
+                correctLevel: QRCode.CorrectLevel.L
+              });
+            }
+          });
+        }
+      })
+      .catch(err => {
+        console.error('流式请求失败:', err);
+        // 如果出错且 bot 消息内容仍为空，显示错误提示
+        if (botMsg.content === '') {
+          botMsg.content = '抱歉，服务暂时不可用，请稍后重试。';
+          this.$forceUpdate();
+        } else {
+          this.$message.error('网络错误');
+        }
+      })
+      },
+       queryHotBlogsScroll() {
+        axios.get("/blog/hot?current=" + this.current)
+          .then(({data}) => {
+            data.forEach(b => b.img = b.images.split(",")[0]);
+            this.blogs = this.blogs.concat(data);
+          })
+          .catch(err => {
+            this.$message.error(err)
+          })
+      },
+      addLike(b) {
+        axios.put("/blog/like/" +b.id)
+          .then(({data}) => {
+            this.queryBlogById(b)
+          })
+          .catch(err => {
+            this.$message.error(err)
+          })
+      },
+      queryBlogById(b) {
+        axios.get("/blog/" + b.id)
+          .then(({data}) => {
+            b.liked = data.liked;
+            b.isLike = data.isLike;
+          })
+          .catch(() => {
+            this.$message.error
+            b.liked ++;
+          })
+      },
+      onScroll(e) {
+        let scrollTop = e.target.scrollTop;
+        let offsetHeight = e.target.offsetHeight;
+        let scrollHeight = e.target.scrollHeight;
+        if (scrollTop + offsetHeight > scrollHeight && !this.isReachBottom) {
+          this.isReachBottom = true
+          // 再次查询下一页数据
+          this.current++;
+          this.queryHotBlogsScroll();
+        } else {
+          this.isReachBottom = false
+        }
+      },
+      toBlogDetail(b) {
+        location.href = "/blog-detail.html?id=" + b.id
+      },
+      toPage(i) {
+        if (i === 4) {
+          location.href = "/info.html"
+        }
+      },
+      doSearch() {
+        let keyword = this.searchKeyword.trim();
+        if (!keyword) {
+          this.$message.warning('请输入搜索关键词');
+          return;
+        }
+        location.href = `/search.html?keyword=${encodeURIComponent(keyword)}`;
+      },
+      async fetchAiSmartPick() {
+        this.smartPicksLoading = true;   // 开始加载
+        try {
+          const userId = this.getUserId();
+          let x = null, y = null;
+          if (navigator.geolocation) {
+            const pos = await new Promise((resolve) => {
+            navigator.geolocation.getCurrentPosition(
+            (p) => resolve({ lng: p.coords.longitude, lat: p.coords.latitude }),
+            () => resolve(null),
+            { enableHighAccuracy: true, timeout: 30000, maximumAge: 0 }   // 新增高精度选项
+             );
+           });
+            if (pos) { x = pos.lng; y = pos.lat; }
+          }
+          const res = await axios.get('/home/aiSmartPick', { params: { userId, x, y } });       
+            this.smartPicks = res.data;    
+         } catch (err) {
+         console.error('获取AI推荐失败', err);
+         this.smartPicks = [];
+         } finally {
+         this.smartPicksLoading = false;   // 结束加载
+        }
+      },
+      toShopDetail(shopId) {
+        location.href = `/shop-detail.html?id=${shopId}`;
+      },
+      imgError(e) {
+        e.target.src = '/imgs/default-shop.png'; // 图片加载失败时的默认图
+      },
+      formatDistance(meters) {
+        if (!meters) return '';
+        if (meters >= 1000) {
+        return (meters / 1000).toFixed(1) + 'km';
+        }
+        return Math.round(meters) + 'm';
+      }
+    }
+  });
+</script>
+</body>
+</html> 

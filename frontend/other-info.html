@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <!-- 引入样式 -->
+  <link rel="stylesheet" href="./css/element.css">
+  <link href="./css/main.css" rel="stylesheet">
+  <link href="./css/info.css" rel="stylesheet">
+
+  <style type="text/css">
+    /* 微调：确保 tab 容器高度自适应 */
+    .el-tabs--bottom .el-tabs__item.is-bottom:nth-child(2),
+    .el-tabs--bottom .el-tabs__item.is-top:nth-child(2),
+    .el-tabs--top .el-tabs__item.is-bottom:nth-child(2),
+    .el-tabs--top .el-tabs__item.is-top:nth-child(2) {
+      padding-left: 15px;
+    }
+
+    .el-tabs,
+    .el-tab-pane {
+      height: 100%;
+    }
+
+    .el-tabs__header {
+      height: 10%;
+    }
+
+    .el-tabs__content {
+      height: 90%;
+    }
+
+    /* 修复笔记列表滚动区域高度 */
+    .blog-list {
+      padding-bottom: 80px;
+      height: auto;
+      min-height: 300px;
+    }
+  </style>
+</head>
+
+<body>
+<div id="app">
+  <!-- 头部 -->
+  <div class="header">
+    <div class="header-back-btn" @click="goBack"><i class="el-icon-arrow-left"></i></div>
+    <div class="header-title">&nbsp;&nbsp;&nbsp;</div>
+  </div>
+
+  <!-- 个人信息卡片（适配 info.css 样式） -->
+  <div class="basic">
+    <div class="basic-avatar">
+      <img :src="info.icon || '/imgs/icons/default-icon.png'" alt="">
+    </div>
+    <div class="basic-info">
+      <div class="info-header">
+        <div class="name">{{ info.nickName || '用户' + info.id }}</div>
+        <div class="location">
+          <span class="city">{{ info.city || '未知城市' }}</span>
+          <span class="gender">{{ info.gender || '未知性别' }}</span>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-item">
+          <span class="stat-label">笔记</span>
+          <span class="stat-number">{{ blogs.length }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">关注</span>
+          <span class="stat-number">{{ info.followee || 0 }}</span>
+        </div>
+        <div class="stat-item">
+          <span class="stat-label">粉丝</span>
+          <span class="stat-number">{{ info.fans || 0 }}</span>
+        </div>
+      </div>
+      <div class="action-buttons">
+        <div class="logout-btn" @click="follow" style="text-align: center">
+          {{ followed ? "取消关注" : "关注" }}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 个性简介 -->
+  <div class="introduce">
+    <span v-if="info.introduce">{{ info.introduce }}</span>
+    <span v-else>这个人很懒，什么都没有留下</span>
+  </div>
+
+  <!-- 主要内容区（笔记 / 共同关注） -->
+  <div class="content">
+    <el-tabs v-model="activeName" @tab-click="handleClick">
+      <!-- 笔记 tab -->
+      <el-tab-pane label="笔记" name="1">
+        <div class="blog-list" v-if="blogs.length">
+          <div v-for="b in blogs" :key="b.id" class="blog-box" @click="toBlogDetail(b.id)">
+            <div class="blog-img">
+              <img :src="b.images.split(',')[0]" alt="">
+            </div>
+            <div class="blog-title" v-html="b.title"></div>
+            <div class="blog-foot">
+              <div class="blog-user-icon">
+                <img :src="info.icon || '/imgs/icons/default-icon.png'" alt="">
+              </div>
+              <div class="blog-user-name">{{ info.nickName || '用户' + info.id }}</div>
+              <div class="blog-liked">
+                <img src="/imgs/thumbup.png" alt=""> {{ info.liked }}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div v-else class="empty-state">还没有发布过笔记～</div>
+      </el-tab-pane>
+
+      <!-- 共同关注 tab -->
+      <el-tab-pane label="共同关注" name="2">
+        <div v-if="commonFollows.length" style="margin: 12px 12px 0 12px; font-size: 14px; color: #5a6e7c;">
+          你们都关注了：
+        </div>
+        <div class="follow-info" v-for="u in commonFollows" :key="u.id">
+          <div class="follow-info-icon" @click="toOtherInfo(u.id)">
+            <img :src="u.icon || '/imgs/icons/default-icon.png'" alt="">
+          </div>
+          <div class="follow-info-name">
+            <div class="name">{{ u.nickName || '用户' + u.id }}</div>
+          </div>
+          <div class="follow-info-btn" @click="toOtherInfo(u.id)">
+            去主页看看
+          </div>
+        </div>
+        <div v-if="!commonFollows.length && activeName === '2'" class="empty-state">
+          暂无共同关注的人
+        </div>
+      </el-tab-pane>
+    </el-tabs>
+  </div>
+
+  <!-- 底部导航栏（复用原有组件） -->
+  <foot-bar :active-btn="0"></foot-bar>
+</div>
+
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="./js/element.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/footer.js"></script>
+
+<script>
+  const app = new Vue({
+    el: "#app",
+    data: {
+      util,
+      user: {},           // 被查看的用户信息
+      loginUser: {},      // 当前登录用户
+      activeName: "1",
+      info: {},           // 用户详细信息（简介、城市等）
+      blogs: [],          // 笔记列表
+      followed: false,    // 当前登录用户是否关注了此人
+      commonFollows: [],  // 共同关注列表
+      followCount: 0,     // 此人的关注数（从接口获取，未获取时显示0）
+      fansCount: 0        // 此人的粉丝数（从接口获取）
+    },
+    created() {
+      this.queryUser();
+      this.queryLoginUser();
+    },
+    methods: {
+      // 获取用户基本信息
+      queryUser() {
+        let id = this.util.getUrlParam("id");
+        if (!id) {
+          this.$message.error("缺少用户参数");
+          return;
+        }
+        axios.get("/user/" + id)
+          .then(({ data }) => {
+            this.user = data;
+            this.queryUserInfo();      // 获取详细资料
+            this.queryBlogs();         // 获取笔记列表
+            this.isFollowed();         // 查询关注状态
+            this.queryStats();         // 获取关注/粉丝数量（可选接口）
+          })
+          .catch(err => {
+            console.error(err);
+            this.$message.error("加载用户信息失败");
+          });
+      },
+      // 获取当前登录用户
+      queryLoginUser() {
+        axios.get("/user/me")
+          .then(({ data }) => {
+            this.loginUser = data;
+          })
+          .catch(() => {
+            // 未登录状态不影响浏览
+          });
+      },
+      // 获取用户详细信息（城市、性别、简介等）
+      queryUserInfo() {
+        axios.get("/user/info/" + this.user.id)
+          .then(({ data }) => {
+            if (data) {
+              this.info = data;
+            }
+          })
+          .catch(err => console.error("获取用户详情失败", err));
+      },
+      // 获取用户的笔记列表
+      queryBlogs() {
+        axios.get("/blog/of/user", {
+          params: { id: this.user.id, current: 1 }
+        })
+          .then(({ data }) => {
+            this.blogs = data;
+          })
+          .catch(err => {
+            console.error(err);
+            this.$message.error("加载笔记失败");
+          });
+      },
+      // 查询当前登录用户是否关注了此人
+      isFollowed() {
+        axios.get("/follow/or/not/" + this.user.id)
+          .then(({ data }) => {
+            this.followed = data;
+          })
+          .catch(err => console.error("查询关注状态失败", err));
+      },
+      queryUser() {
+      let id = this.util.getUrlParam("id");
+      axios.get("/user/" + id)
+      .then(({ data }) => {
+      this.user = data;
+      // 此时 user 已包含 followee、fans 字段
+      this.followCount = this.user.followee || 0;
+      this.fansCount = this.user.fans || 0;
+      this.queryUserInfo();   // 可省略，因为 UserProfileVO 已含详细信息
+      this.queryBlogs();
+      this.isFollowed();
+      })
+      .catch(err => console.warn("获取统计数据失败", err));
+      },
+      // 关注 / 取消关注
+      follow() {
+        //if (!this.loginUser.id) {
+          //this.$message.warning("请先登录");
+          //return;
+        //}
+        axios.put("/follow/" + this.user.id + "/" + !this.followed)
+          .then(() => {
+            this.$message.success(this.followed ? "已取消关注" : "已关注");
+            this.followed = !this.followed;
+            // 刷新粉丝数量（若有接口则重新获取）
+            this.queryStats();
+          })
+          .catch(err => {
+            this.$message.error(err.response?.data?.msg || "操作失败");
+          });
+      },
+      // 共同关注列表
+      queryCommonFollow() {
+        axios.get("/follow/common/" + this.user.id)
+          .then(({ data }) => {
+            this.commonFollows = data;
+          })
+          .catch(err => {
+            console.error(err);
+            this.$message.error("加载共同关注失败");
+          });
+      },
+      // 跳转到博客详情
+      toBlogDetail(blogId) {
+        if (blogId) {
+          location.href = "/blog-detail.html?id=" + blogId;
+        }
+      },
+      // 跳转到其他用户主页（用于共同关注列表）
+      toOtherInfo(userId) {
+        if (userId) {
+          location.href = "/other-info.html?id=" + userId;
+        }
+      },
+      // 返回上一页
+      goBack() {
+        history.back();
+      },
+      // tab 切换事件
+      handleClick(tab) {
+        if (tab.name === '2') {
+          if (this.commonFollows.length === 0) {
+            this.queryCommonFollow();
+          }
+        }
+      }
+    }
+  });
+</script>
+</body>
+
+</html>

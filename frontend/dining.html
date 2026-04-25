@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>AI食光</title>
+    <link rel="stylesheet" href="./css/element.css">
+    <link rel="stylesheet" href="./css/dining.css">
+    <link href="./css/main.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+</head>
+<body>
+<div id="app">
+    <!-- 头部 -->
+    <div class="header">
+        <div class="back-btn" @click="goBack">←</div>
+        <div class="shop-name">{{ shopName }}</div>
+        <div class="cart-icon" @click="toggleCart">
+            🛒
+            <span class="cart-badge" v-if="cartTotalCount > 0">{{ cartTotalCount }}</span>
+        </div>
+    </div>
+
+    <!-- 菜品列表 -->
+    <div class="dish-list" v-if="dishes.length > 0">
+        <div class="dish-item" v-for="dish in dishes" :key="dish.id">
+            <img class="dish-img" :src="dish.image || '/imgs/default-dish.png'" alt="">
+            <div class="dish-info">
+                <div class="dish-name">{{ dish.name }}</div>
+                <div class="dish-price">¥{{ (dish.price / 100).toFixed(2) }}</div>
+                <div class="quantity-control">
+                    <button @click="updateCart(dish.id, -1)">-</button>
+                    <span class="quantity">{{ getQuantity(dish.id) }}</span>
+                    <button class="add" @click="updateCart(dish.id, 1)">+</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div v-else class="empty-cart" style="padding: 40px;">加载菜品中...</div>
+
+    <!-- 购物车侧边栏 -->
+    <div class="cart-sidebar" v-show="cartVisible">
+        <div class="cart-header">
+            <span>购物车</span>
+            <span @click="toggleCart" style="cursor:pointer;">✕</span>
+        </div>
+        <div v-if="cartItems.length === 0" class="empty-cart">购物车空空如也</div>
+        <div v-else>
+            <div class="cart-item" v-for="item in cartItems" :key="item.dishId">
+                <div class="cart-item-name">{{ item.dishName }}</div>
+                <div class="cart-item-price">¥{{ (item.price / 100).toFixed(2) }}</div>
+                <div class="cart-item-quantity">
+                    <button @click="updateCart(item.dishId, -1)">-</button>
+                    <span>{{ item.quantity }}</span>
+                    <button @click="updateCart(item.dishId, 1)">+</button>
+                </div>
+            </div>
+            <div class="cart-total">
+                合计：¥{{ (cartTotalPrice / 100).toFixed(2) }}
+            </div>
+            <button class="btn-checkout" @click="aiCheckout">🤖 AI 智能结算</button>
+        </div>
+    </div>
+
+    <!-- AI 聊天窗口 -->
+    <div class="chat-widget" v-show="showChat" @click.stop>
+        <div class="chat-header">
+            <span>智能助手</span>
+            <i class="el-icon-close" @click="showChat = false" style="cursor:pointer;">✕</i>
+        </div>
+        <div class="chat-messages" ref="chatMessages">
+            <div v-for="msg in messages" :key="msg.id" class="message" :class="msg.role">
+                <div v-if="msg.role === 'user'" class="user-message">{{ msg.content }}</div>
+                <div v-else-if="msg.role === 'bot'" class="bot-message">
+                    <div style="white-space: pre-wrap;">{{ msg.content }}</div>
+                    <div v-if="msg.qrCode" :id="'qr-' + msg.id" class="qr-in-chat"></div>
+                </div>
+            </div>
+        </div>
+        <div class="chat-input">
+            <input type="text" v-model="inputText" @keyup.enter="sendMessage" placeholder="说句话或打字..." />
+            <button @click="sendMessage">发送</button>
+        </div>
+    </div>
+    <button class="open-chat-btn" @click="showChat = true">🤖</button>
+</div>
+
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="https://unpkg.com/element-ui/lib/index.js"></script>
+<script src="./js/common.js"></script>
+<script>
+    new Vue({
+        el: '#app',
+        data: {
+            shopId: null,
+            shopName: '加载中...',
+            dishes: [],
+            cartItems: [],
+            cartTotalPrice: 0,
+            cartTotalCount: 0,
+            cartVisible: false,
+            // AI 聊天相关
+            showChat: false,
+            messages: [],
+            inputText: '',
+            sessionId: Date.now().toString(),
+            userId: null,
+            token: null
+        },
+        mounted() {
+            this.userId = this.getUserId();
+            this.token = sessionStorage.getItem('token');
+            if (!this.token) {
+                this.$message.error('请先登录');
+                setTimeout(() => location.href = '/login.html', 1500);
+                return;
+            }
+            const urlParams = new URLSearchParams(window.location.search);
+            this.shopId = urlParams.get('shopId');
+            if (!this.shopId) {
+                this.$message.error('缺少店铺参数');
+                return;
+            }
+            this.loadShopInfo();
+            this.loadDishes();
+            this.loadCart();
+        },
+        methods: {
+            getUserId() {
+                let userId = localStorage.getItem('userId');
+                if (!userId || userId.includes('.')) {
+                    userId = Date.now() + '' + Math.floor(Math.random() * 10000);
+                    localStorage.setItem('userId', userId);
+                }
+                return userId;
+            },
+            async loadShopInfo() {
+              try {
+              // 添加 userId 参数
+              const res = await axios.get(`/shop/${this.shopId}`, {
+              params: { userId: this.userId }
+              });
+              this.shopName = res.data.name;
+              } catch(e) { console.error(e); }
+            },
+            async loadDishes() {
+                try {
+                    const res = await axios.get(`/dish/list?shopId=${this.shopId}&page=1&size=50`);
+                    this.dishes = res.data; 
+                } catch(e) { console.error(e); }
+            },
+            async loadCart() {
+                try {
+                    const res = await axios.get(`/cart/list?shopId=${this.shopId}`);
+                    this.cartItems = res.data.items;
+                    this.cartTotalPrice = res.data.totalAmount;
+                    this.cartTotalCount = this.cartItems.reduce((sum, item) => sum + item.quantity, 0);
+                } catch(e) { console.error(e); }
+            },
+            getQuantity(dishId) {
+                const item = this.cartItems.find(i => i.dishId === dishId);
+                return item ? item.quantity : 0;
+            },
+            async updateCart(dishId, delta) {
+        try {
+        const currentQty = this.getQuantity(dishId);
+        const newQty = currentQty + delta;
+        if (newQty < 0) return;
+        // 统一使用 /cart/add，quantity 传增量（delta），后端会自动处理加减和删除
+        await axios.post('/cart/add', null, {
+            params: { shopId: this.shopId, dishId, quantity: delta }
+        });
+        await this.loadCart();
+        // 可选：自动打开购物车侧边栏
+        this.cartVisible = true;
+        } catch(e) {
+         this.$message.error(e.response?.data?.msg || '操作失败');
+         }
+     },
+            toggleCart() {
+                this.cartVisible = !this.cartVisible;
+            },
+            aiCheckout() {
+                this.showChat = true;
+                this.inputText = '帮我用券结算';
+                this.sendMessage();
+            },
+            async sendMessage() {
+                const userMsg = this.inputText.trim();
+                if (!userMsg) return;
+                this.messages.push({ id: Date.now(), role: 'user', content: userMsg });
+                this.inputText = '';
+                const botMsgId = Date.now() + 1;
+                this.messages.push({ id: botMsgId, role: 'bot', content: '', qrCode: null });
+                const botMsg = this.messages[this.messages.length - 1];
+                const requestBody = {
+                    query: userMsg,
+                    sessionId: this.sessionId,
+                    userId: parseInt(this.userId),
+                    context: { 
+                              source: 'dining_page',
+                              shopId: this.shopId   
+                             }
+                };
+                try {
+                    const response = await fetch('/api/ai/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'authorization': this.token },
+                        body: JSON.stringify(requestBody)
+                    });
+                    const reader = response.body.getReader();
+                    const decoder = new TextDecoder();
+                    let buffer = '';
+                    while (true) {
+                        const { done, value } = await reader.read();
+                        if (done) break;
+                        buffer += decoder.decode(value, { stream: true });
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop();
+                        for (const line of lines) {
+                            if (line.startsWith('data:')) {
+                                const content = line.slice(5).trim();
+                                if (content) {
+                                    botMsg.content += content;
+                                    this.$forceUpdate();
+                                    this.$nextTick(() => {
+                                        const container = this.$refs.chatMessages;
+                                        if (container) container.scrollTop = container.scrollHeight;
+                                    });
+                                }
+                            }
+                        }
+                    }
+                    botMsg.content = botMsg.content
+                        .replace(/(\d+\.)/g, '\n$1')
+                        .replace(/\*\*/g, '')
+                        .replace(/###+/g, '\n\n')
+                        .replace(/##+/g, '\n\n')
+                        .replace(/\s*-\s*/g, '\n')
+                        .replace(/\n{3,}/g, '\n\n');
+                    const qrMatch = botMsg.content.match(/VOUCHER_\d+/);
+                    if (qrMatch) {
+                        botMsg.qrCode = qrMatch[0];
+                        botMsg.content = botMsg.content.replace(qrMatch[0], '').replace(/：$/, '').trim();
+                        if (botMsg.content === '') botMsg.content = '请出示以下二维码给店员扫码核销：';
+                    }
+                    this.$forceUpdate();
+                    if (botMsg.qrCode) {
+                        this.$nextTick(() => {
+                            const container = document.getElementById('qr-' + botMsg.id);
+                            if (container) {
+                                container.innerHTML = '';
+                                new QRCode(container, {
+                                    text: botMsg.qrCode,
+                                    width: 150,
+                                    height: 150,
+                                    colorDark: "#000000",
+                                    colorLight: "#ffffff",
+                                    correctLevel: QRCode.CorrectLevel.L
+                                });
+                            }
+                        });
+                    }
+                    // 结算成功后刷新购物车
+                    if (botMsg.content.includes('结算成功')) {
+                        await this.loadCart();
+                    }
+                } catch (err) {
+                    console.error(err);
+                    if (botMsg.content === '') botMsg.content = '抱歉，服务暂时不可用。';
+                    this.$forceUpdate();
+                }
+            },
+            goBack() {
+                history.back();
+            }
+        }
+    });
+</script>
+</body>
+</html>

@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <link rel="stylesheet" href="./css/element.css">
+  <link href="./css/main.css" rel="stylesheet">
+  <link href="./css/blog-edit.css" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="header-cancel-btn" @click="goBack">取消</div>
+    <div class="header-title">发笔记</div>
+    <div class="header-commit">
+      <div class="header-commit-btn" :class="{disabled: isSubmitting}" @click="submitBlog">发布</div>
+    </div>
+  </div>
+
+  <!-- 图片上传 -->
+  <div class="upload-box">
+    <input type="file" @change="fileSelected" ref="fileInput" style="display: none" accept="image/jpeg,image/png,image/jpg,image/webp" multiple>
+    <div class="upload-btn" @click="openFileDialog">
+      <i class="el-icon-camera"></i>
+      <div>上传照片</div>
+    </div>
+    <div class="pic-list">
+      <div class="pic-box" v-for="(img, idx) in fileList" :key="idx">
+        <img :src="img" alt="图片">
+        <i class="el-icon-close" @click.stop="deletePic(idx)"></i>
+      </div>
+      <div v-if="uploading" class="pic-upload-loading"><i class="el-icon-loading"></i></div>
+    </div>
+  </div>
+  <div style="padding: 0 16px 8px; font-size:12px; color:#999;" v-if="fileList.length">已选{{fileList.length}}张</div>
+
+  <!-- 标题 & 内容 - 无前端校验 -->
+  <div class="blog-title">
+    <input v-model="params.title" type="text" placeholder="标题（选填）">
+  </div>
+  <div class="blog-content">
+    <textarea v-model="params.content" placeholder="分享你的美食体验..."></textarea>
+  </div>
+  <div class="divider"></div>
+
+  <!-- 关联商户 -->
+  <div class="blog-shop" @click="openShopDialog">
+    <div class="shop-left">关联商户</div>
+    <div v-if="selectedShop" style="color:#ff6633;">{{selectedShop.name}}</div>
+    <div v-else style="color:#999;">去选择 <i class="el-icon-arrow-right"></i></div>
+  </div>
+
+  <!-- 商户弹窗 -->
+  <div class="mask" v-show="showDialog" @click="showDialog=false"></div>
+  <div class="shop-dialog" v-show="showDialog">
+    <div class="blog-shop" style="border-bottom:1px solid #eee;">
+      <div class="shop-left">关联商户</div>
+      <div style="color:#ff6633;" @click="clearShop">不关联</div>
+    </div>
+    <div class="search-bar">
+      <div class="city-select">西安</div>
+      <div class="search-input">
+        <i class="el-icon-search" @click="searchShops"></i>
+        <input v-model="shopKeyword" placeholder="搜索商户" @keyup.enter="searchShops">
+      </div>
+    </div>
+    <div class="shop-list" v-if="shops.length">
+      <div v-for="s in shops" class="shop-item" @click="selectShop(s)">
+        <span>{{s.name}}</span>
+        <span style="color:#999;">{{s.area || '热门'}}</span>
+      </div>
+    </div>
+    <div class="shop-list" v-else style="text-align:center; padding:40px;">暂无商户</div>
+  </div>
+  <div class="loading-mask" v-if="globalLoading"><i class="el-icon-loading"></i> 发布中...</div>
+</div>
+
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="./js/element.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/footer.js"></script>
+<script>
+  new Vue({
+    el: "#app",
+    data: {
+      fileList: [],
+      params: { title: '', content: '', images: '' },
+      showDialog: false,
+      shops: [],
+      shopKeyword: '',
+      selectedShop: null,
+      isSubmitting: false,
+      uploading: false,
+      globalLoading: false
+    },
+    methods: {
+      openFileDialog() {
+        this.$refs.fileInput.click();
+      },
+      async fileSelected(e) {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+      this.uploading = true;
+      for (let file of files) {
+          const formData = new FormData();
+          formData.append('file', file);
+          try {
+          // 拦截器返回的是 { success, data }，所以 res 就是整个 Result 对象
+          const res = await axios.post('/upload/blog', formData);
+          // 真正的 URL 在 res.data 中
+          let imgUrl = res.data;
+          this.fileList.push(imgUrl);
+        } catch (err) {
+        this.$message.error(`上传失败: ${file.name}`);
+        }
+      }
+      this.uploading = false;
+      this.$refs.fileInput.value = '';
+      },
+      async deletePic(idx) {
+      const ossUrl = this.fileList[idx];
+      // 提取 OSS objectKey（例如：https://bucket.endpoint/blog-picture/1/2/xxx.jpg -> blog-picture/1/2/xxx.jpg）
+      const objectKey = ossUrl.split('/').slice(3).join('/');
+      try {
+       await axios.get('/upload/blog/delete', { params: { name: objectKey } });
+      } catch(e) { /* 忽略 */ }
+      this.fileList.splice(idx, 1);
+      },
+      
+      // 打开弹窗：默认加载所有店铺
+      openShopDialog() {
+        this.showDialog = true;
+        this.loadAllShops();  // 调用获取全部店铺的方法
+      },
+      
+      // 获取全部店铺（/shop/all）
+      async loadAllShops() {
+        try {
+          const res = await axios.get('/shop/all', { params: { current: 1 } });
+          // 后端返回 Result 结构，数据在 data 字段
+          this.shops = res.data;
+        } catch (err) {
+          this.$message.error('加载店铺失败');
+        }
+      },
+      
+      // 搜索店铺（/shop/of/name 带 keyword）
+      async searchShops() {
+        try {
+          const res = await axios.get('/shop/of/name', {
+            params: {
+              keyword: this.shopKeyword,
+              page: 1,
+              size: 20
+            }
+          });
+          this.shops = res.data;
+          if (this.shops.length === 0 && this.shopKeyword) {
+            this.$message.info('未找到相关商户');
+          }
+        } catch (err) {
+          this.$message.error('搜索失败');
+        }
+      },
+      
+      selectShop(shop) { this.selectedShop = shop; this.showDialog = false; },
+      clearShop() { this.selectedShop = null; this.showDialog = false; },
+      
+      async submitBlog() {
+        if (this.isSubmitting) return;
+        this.isSubmitting = true;
+        this.globalLoading = true;
+        try {
+          const submitData = {
+            title: this.params.title || '',
+            content: this.params.content || '',
+            images: this.fileList.join(',')
+          };
+          if (this.selectedShop && this.selectedShop.id) submitData.shopId = this.selectedShop.id;
+          
+          await axios.post('/blog', submitData);
+          this.$message.success('发布成功');
+          setTimeout(() => { location.href = '/info.html'; }, 800);
+        } catch (err) {
+          this.isSubmitting = false;
+          this.globalLoading = false;
+        }
+      },
+      goBack() { history.back(); }
+    },
+    watch: {
+      fileList: {
+        handler(val) { this.params.images = val.join(','); },
+        immediate: true
+      }
+    },
+    mounted() {
+      window.vm = this;
+    }
+  });
+</script>
+</body>
+</html>
