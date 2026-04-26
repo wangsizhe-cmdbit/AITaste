@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <link rel="stylesheet" href="./css/element.css">
+  <link href="./css/main.css" rel="stylesheet">
+  <link href="./css/info.css" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="header-back-btn" @click="goBack"><i class="el-icon-arrow-left"></i></div>
+    <div class="header-title">个人主页</div>
+  </div>
+
+  <div class="basic">
+  <div class="basic-avatar">
+    <img :src="user.icon || '/imgs/icons/default-icon.png'" alt="头像">
+  </div>
+  <div class="basic-info">
+    <div class="info-header">
+      <div class="name">{{ user.nickName || '某不知名用户~' }}</div>
+      <div class="location">
+        <span class="city">{{ user.city || '未设置' }}</span>
+        <span class="gender">{{ user.gender || '保密' }}</span>
+      </div>
+    </div>
+    <div class="stats-row">
+      <div class="stat-item">
+        <span class="stat-label">📝 评论</span>
+        <span class="stat-number">{{ evaluateCount }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">👥 粉丝</span>
+        <span class="stat-number">{{ user.fansCount }}</span>
+      </div>
+      <div class="stat-item">
+        <span class="stat-label">❤️ 关注</span>
+        <span class="stat-number">{{ user.followingsCount }}</span>
+      </div>
+    </div>
+    <div class="action-buttons">
+      <button class="edit-btn" @click="toEdit">编辑资料</button>
+      <button class="logout-btn" @click="logout">退出登录</button>
+    </div>
+  </div>
+  </div>
+
+  <div class="introduce">{{ user.introduce || '这个人很懒，还没写介绍～' }}</div>
+
+  <!-- 优惠券入口 -->
+  <div class="voucher-entrance" @click="toMyVouchers">
+    <div class="voucher-left">
+      <img src="/imgs/icons/OIP-C.webp" alt="" class="voucher-icon">
+      <span>我的优惠券</span>
+    </div>
+    <div class="voucher-right">
+      <i class="el-icon-arrow-right"></i>
+    </div>
+  </div>
+
+  <div class="content">
+    <el-tabs v-model="activeName" @tab-click="handleTabClick">
+  <!-- 我的笔记 - 使用与首页相同的 blog-box 结构 -->
+  <el-tab-pane label="我的笔记" name="1">
+    <div v-if="blogs.length === 0" class="empty-state">暂无笔记，去分享探店日常吧～</div>
+    <div class="blog-list" v-else>
+      <div class="blog-box" v-for="b in blogs" :key="b.id" @click="toBlogDetail(b)">
+        <div class="blog-img"><img :src="b.img" @error="imgError" alt=""></div>
+        <div class="blog-title">{{ b.title }}</div>
+        <div class="blog-foot">
+          <div class="blog-user-icon"><img :src="user.icon || '/imgs/icons/default-icon.png'"></div>
+          <div class="blog-user-name">{{ user.nickName || '我' }}</div>
+          <div class="blog-liked" @click.stop="addLike(b)">
+            <svg t="1646634642977" class="icon" viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M160 944c0 8.8-7.2 16-16 16h-32c-26.5 0-48-21.5-48-48V528c0-26.5 21.5-48 48-48h32c8.8 0 16 7.2 16 16v448zM96 416c-53 0-96 43-96 96v416c0 53 43 96 96 96h96c17.7 0 32-14.3 32-32V448c0-17.7-14.3-32-32-32H96zM505.6 64c16.2 0 26.4 8.7 31 13.9 4.6 5.2 12.1 16.3 10.3 32.4l-23.5 203.4c-4.9 42.2 8.6 84.6 36.8 116.4 28.3 31.7 68.9 49.9 111.4 49.9h271.2c6.6 0 10.8 3.3 13.2 6.1s5 7.5 4 14l-48 303.4c-6.9 43.6-29.1 83.4-62.7 112C815.8 944.2 773 960 728.9 960h-317c-33.1 0-59.9-26.8-59.9-59.9v-455c0-6.1 1.7-12 5-17.1 69.5-109 106.4-234.2 107-364h41.6z" :fill="b.isLike ? '#ff6633' : '#82848a'"></path>
+            </svg>
+            {{ b.liked || 0 }}
+          </div>
+        </div>
+      </div>
+    </div>
+  </el-tab-pane>
+
+  <!-- 关注动态 - 使用相同的 blog-box 结构，移除取消关注按钮 -->
+  <el-tab-pane label="关注动态" name="2">
+    <div class="blog-list" @scroll="onScroll" ref="feedScroll">
+      <div class="blog-box" v-for="b in feedBlogs" :key="b.id" @click="toBlogDetail(b)">
+        <div class="blog-img"><img :src="b.img" @error="imgError" alt=""></div>
+        <div class="blog-title">{{ b.title }}</div>
+        <div class="blog-foot">
+          <div class="blog-user-icon"><img :src="b.icon || '/imgs/icons/default-icon.png'"></div>
+          <div class="blog-user-name">{{ b.name }}</div>
+          <div class="blog-liked" @click.stop="addLike(b)">
+            <svg t="1646634642977" class="icon" viewBox="0 0 1024 1024" width="14" height="14">
+              <path d="M160 944c0 8.8-7.2 16-16 16h-32c-26.5 0-48-21.5-48-48V528c0-26.5 21.5-48 48-48h32c8.8 0 16 7.2 16 16v448zM96 416c-53 0-96 43-96 96v416c0 53 43 96 96 96h96c17.7 0 32-14.3 32-32V448c0-17.7-14.3-32-32-32H96zM505.6 64c16.2 0 26.4 8.7 31 13.9 4.6 5.2 12.1 16.3 10.3 32.4l-23.5 203.4c-4.9 42.2 8.6 84.6 36.8 116.4 28.3 31.7 68.9 49.9 111.4 49.9h271.2c6.6 0 10.8 3.3 13.2 6.1s5 7.5 4 14l-48 303.4c-6.9 43.6-29.1 83.4-62.7 112C815.8 944.2 773 960 728.9 960h-317c-33.1 0-59.9-26.8-59.9-59.9v-455c0-6.1 1.7-12 5-17.1 69.5-109 106.4-234.2 107-364h41.6z" :fill="b.isLike ? '#ff6633' : '#82848a'"></path>
+            </svg>
+            {{ b.liked }}
+          </div>
+        </div>
+      </div>
+      <div v-if="feedLoading" class="load-tip">加载更多...</div>
+      <div v-if="feedFinished" class="load-tip">没有更多动态了</div>
+    </div>
+  </el-tab-pane>
+</el-tabs>
+</div>
+
+  <foot-bar :active-btn="4"></foot-bar>
+</div>
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="./js/element.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/footer.js"></script>
+<script>
+  const app = new Vue({
+    el: "#app",
+    data: {
+      user: {},
+      blogs: [],                // 我的笔记
+      activeName: "1",          // 当前激活的tab，默认我的笔记
+      // 统计数据
+      evaluateCount: 0,
+      fansCount: 0,
+      followingsCount: 0,
+      // 关注动态相关
+      feedBlogs: [],
+      feedParams: { minTime: 0, offset: 0 },
+      feedLoading: false,
+      feedFinished: false,
+    },
+    created() {
+      this.queryUserAndCore();
+    },
+    methods: {
+      async queryUserAndCore() {
+        const userId = localStorage.getItem("userId");
+        if (!userId) {
+          this.$message.error("未登录");
+          setTimeout(() => location.href = "login.html", 1000);
+          return;
+        }
+        this.user.id = userId;
+        try {
+          const userRes = await axios.get(`/user/info/${userId}`);
+          const profile = userRes.data || {};
+          this.user = {
+            id: profile.id,
+            nickName: profile.nickName,
+            icon: profile.icon,
+            introduce: profile.introduce || '',
+            city: profile.city || '',
+            gender: profile.gender || '保密',
+            fansCount: profile.fans || 0,
+            followingsCount: profile.followee || 0
+          };
+          sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+          
+          await Promise.all([
+            this.fetchEvaluateCount(userId)
+          ]);
+          await this.queryMyBlogs();
+        } catch (err) {
+          console.error(err);
+          this.$message.error("加载用户信息失败");
+        }
+      },
+      async fetchEvaluateCount(userId) {
+        try {
+          const res = await axios.get(`/comment/count/${userId}`);
+          this.evaluateCount = res.data || 0;
+        } catch (e) {
+          this.evaluateCount = 0;
+        }
+      },
+      imgError(e) {
+       e.target.src = '/imgs/default-blog.jpg';
+      },
+      async queryMyBlogs() {
+      try {
+      const res = await axios.get("/blog/of/me", { params: { current: 1 } });
+      this.blogs = (res.data || []).map(b => ({
+      ...b,
+      img: b.images ? b.images.split(",")[0] : '/imgs/default-blog.jpg',
+      icon: this.user.icon,
+      name: this.user.nickName,
+      isLike: b.isLike,
+      liked: b.liked
+      }));
+      } catch (err) {
+      this.$message.error("笔记加载失败");
+      }
+     },
+      // 关注的人的笔记（滚动分页）
+      async loadFeedBlogs(clear = false) {
+      if (clear) {
+      this.feedParams = { minTime: new Date().getTime() + 1, offset: 0 };
+      this.feedBlogs = [];
+      this.feedFinished = false;
+      }
+      if (this.feedFinished || this.feedLoading) return;
+      this.feedLoading = true;
+      try {
+      const res = await axios.get("/blog/of/follow", {
+      params: { lastId: this.feedParams.minTime, offset: this.feedParams.offset }
+      });
+      const data = res.data;
+      const list = (data.list || []).map(b => ({
+      ...b,
+      img: b.images ? b.images.split(",")[0] : '/imgs/default-blog.jpg',
+      icon: b.icon || '/imgs/icons/default-icon.png',
+      name: b.name || '用户',
+      isLike: b.isLike || false,
+      liked: b.liked || 0
+      }));
+      if (clear) {
+      this.feedBlogs = list;
+      } else {
+      this.feedBlogs = this.feedBlogs.concat(list);
+      }
+      this.feedParams = { minTime: data.minTime, offset: data.offset };
+      if (!list.length) this.feedFinished = true;
+      } catch (err) {
+      this.$message.error("动态加载失败");
+      } finally {
+      this.feedLoading = false;
+    }
+  },
+      async addLike(blog) {
+  const token = sessionStorage.getItem('token');
+  try {
+    // 后端接口应当实现：如果已点赞则取消，未点赞则点赞，并返回最新数据
+    const res = await axios.put(`/blog/like/${blog.id}`);
+    // 假设后端返回格式：{ isLike: boolean, liked: number }
+    if (res.data) {
+      blog.isLike = res.data.isLike;
+      blog.liked = res.data.liked;
+    } else {
+      // 若后端未返回数据，则手动切换（不推荐，仅作降级）
+      const wasLiked = blog.isLike;
+      blog.isLike = !wasLiked;
+      blog.liked = wasLiked ? blog.liked - 1 : blog.liked + 1;
+    }
+  } catch (err) {
+    this.$message.error("点赞操作失败，请稍后重试");
+  }
+},
+      // 取消关注博主（从关注动态列表中移除并更新关注数）
+      async unfollowAuthor(blog) {
+        const authorId = blog.userId; // 后端返回的博客作者ID
+        if (!authorId) {
+          this.$message.error("无法获取作者信息");
+          return;
+        }
+        try {
+          await axios.put(`/follow/${authorId}/false`);
+          this.$message.success("已取消关注");
+          // 从列表中移除该博客
+          const index = this.feedBlogs.findIndex(b => b.id === blog.id);
+          if (index !== -1) this.feedBlogs.splice(index, 1);
+          // 更新关注数
+          this.followCount = Math.max(0, this.followCount - 1);
+          // 刷新粉丝/关注统计（可选）
+          this.fetchFollowStats(this.user.id);
+        } catch (err) {
+          this.$message.error("取消失败");
+        }
+      },
+      handleTabClick(tab) {
+        if (tab.name === '2' && this.feedBlogs.length === 0 && !this.feedLoading) {
+          this.loadFeedBlogs(true);
+        }
+      },
+      onScroll(e) {
+        let { scrollTop, offsetHeight, scrollHeight } = e.target;
+        if (scrollTop + offsetHeight + 10 >= scrollHeight && !this.feedLoading && !this.feedFinished) {
+          this.loadFeedBlogs();
+        }
+      },
+      goBack() { history.back(); },
+      toEdit() { location.href = 'info-edit.html'; },
+      toMyVouchers() { location.href = 'my-vouchers.html'; },
+      toBlogDetail(blog) {
+        location.href = `/blog-detail.html?id=${blog.id}`;
+      },
+      logout() {
+        axios.post("/user/logout").then(() => {
+          sessionStorage.removeItem("token");
+          localStorage.removeItem("userId");
+          this.$message.success("已退出");
+          setTimeout(() => location.href = "/", 800);
+        }).catch(() => {
+          localStorage.removeItem("userId");
+          location.href = "/";
+        });
+      }
+    }
+  });
+</script>
+</body>
+</html>

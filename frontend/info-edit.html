@@ -1,0 +1,466 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <!-- 引入样式 -->
+  <link rel="stylesheet" href="./css/element.css">
+  <link href="./css/main.css" rel="stylesheet">
+  <link href="./css/info.css" rel="stylesheet">
+</head>
+<body>
+<div id="app">
+  <div class="header">
+    <div class="header-back-btn" @click="goBack"><i class="el-icon-arrow-left"></i></div>
+    <div class="header-title">资料编辑&nbsp;&nbsp;&nbsp;</div>
+  </div>
+  <div class="edit-container">
+    <!-- 基本信息 -->
+    <div class="info-box">
+      <div class="info-item" @click="editAvatar">
+        <div class="info-label">头像</div>
+        <div class="info-btn">
+          <img width="35" :src="user.icon || '/imgs/icons/default-icon.png'" alt="">
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item" @click="editNickName">
+        <div class="info-label">昵称</div>
+        <div class="info-btn">
+          <div>{{user.nickName}}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item" @click="editIntroduce">
+        <div class="info-label">个人介绍</div>
+        <div class="info-btn">
+          <div style="overflow: hidden; width: 150px;text-align: right">{{info.introduce || '介绍一下自己'}}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="info-item" @click="editGender">
+        <div class="info-label">性别</div>
+        <div class="info-btn">
+          <div>{{info.gender || '选择'}}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item" @click="editCity">
+        <div class="info-label">城市</div>
+        <div class="info-btn">
+          <div>{{info.city || '选择'}}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item" @click="editBirthday">
+        <div class="info-label">生日</div>
+        <div class="info-btn">
+          <div>{{info.birthday || '添加'}}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="info-item">
+        <div class="info-label">我的积分</div>
+        <div class="info-btn">
+          <div>查看积分</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item">
+        <div class="info-label">会员等级</div>
+        <div class="info-btn">
+          <div><a href="javascript:void(0)">成为VIP尊享特权</a></div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="info-item" @click="editPassword">
+        <div class="info-label">修改密码</div>
+        <div class="info-btn">
+          <div>{{ hasPassword ? '修改' : '设置' }}</div>
+          <div><i class="el-icon-arrow-right"></i></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 编辑昵称弹窗 -->
+  <el-dialog title="修改昵称" :visible.sync="nickNameDialogVisible" width="80%">
+    <el-input v-model="newNickName" placeholder="请输入昵称"></el-input>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="nickNameDialogVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitNickName">确 定</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- 编辑个人介绍弹窗 -->
+  <el-dialog title="修改个人介绍" :visible.sync="introduceDialogVisible" width="80%">
+    <el-input type="textarea" v-model="newIntroduce" rows="3" placeholder="请输入个人介绍"></el-input>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="introduceDialogVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitIntroduce">确 定</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- 编辑性别弹窗 -->
+  <el-dialog title="修改性别" :visible.sync="genderDialogVisible" width="80%">
+    <el-radio-group v-model="newGender">
+      <el-radio :label="0">男</el-radio>
+      <el-radio :label="1">女</el-radio>
+    </el-radio-group>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="genderDialogVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitGender">确 定</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- 编辑城市弹窗 -->
+  <el-dialog title="修改城市" :visible.sync="cityDialogVisible" width="80%">
+    <el-input v-model="newCity" placeholder="请输入城市"></el-input>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="cityDialogVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitCity">确 定</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- 编辑生日弹窗 -->
+  <el-dialog title="修改生日" :visible.sync="birthdayDialogVisible" width="80%">
+    <el-date-picker v-model="newBirthday" type="date" placeholder="选择日期" value-format="yyyy-MM-dd" style="width: 100%;"></el-date-picker>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="birthdayDialogVisible = false">取 消</el-button>
+      <el-button type="primary" @click="submitBirthday">确 定</el-button>
+    </span>
+  </el-dialog>
+
+ <!-- 头像上传弹窗（使用Element Upload） -->
+  <el-dialog title="修改头像" :visible.sync="avatarDialogVisible" width="80%">
+    <el-upload
+      class="avatar-uploader"
+      action="/api/user/upload/avatar"
+      :show-file-list="false"
+      :on-success="handleAvatarSuccess"
+      :before-upload="beforeAvatarUpload"
+      :headers="uploadHeaders">
+      <img v-if="imageUrl" :src="imageUrl" class="avatar">
+      <i v-else class="el-icon-plus avatar-uploader-icon"></i>
+    </el-upload>
+    <span slot="footer" class="dialog-footer">
+      <el-button @click="avatarDialogVisible = false">关 闭</el-button>
+    </span>
+  </el-dialog>
+
+  <!-- 修改密码弹窗 -->
+  <el-dialog title="修改密码" :visible.sync="passwordDialogVisible" width="80%">
+  <el-input v-if="hasPassword" type="password" v-model="oldPassword" placeholder="请输入原密码" style="margin-bottom: 15px;"></el-input>
+  <el-input type="password" v-model="newPassword" placeholder="请输入新密码（6-20位）" style="margin-bottom: 15px;"></el-input>
+  <el-input type="password" v-model="confirmPassword" placeholder="请再次输入新密码"></el-input>
+  <span slot="footer" class="dialog-footer">
+    <el-button @click="passwordDialogVisible = false">取 消</el-button>
+    <el-button type="primary" @click="submitPassword">确 定</el-button>
+  </span>
+  </el-dialog>
+
+  <foot-bar :active-btn="4"></foot-bar>
+</div>
+
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="./js/element.js"></script>
+<script src="./js/common.js"></script>
+<script src="./js/footer.js"></script>
+
+<script>
+  const app = new Vue({
+    el: "#app",
+    data: {
+      user: {},      // 基本信息（id, nickName, icon等）
+      info: {},      // 详细信息（introduce, gender, city, birthday）
+      // 弹窗控制标志
+      nickNameDialogVisible: false,
+      introduceDialogVisible: false,
+      genderDialogVisible: false,
+      cityDialogVisible: false,
+      birthdayDialogVisible: false,
+      avatarDialogVisible: false,
+      // 临时存储编辑的值
+      newNickName: '',
+      newIntroduce: '',
+      newGender: '',
+      newCity: '',
+      newBirthday: '',
+      imageUrl: '',
+      uploadHeaders: {},
+      passwordDialogVisible: false,
+      oldPassword: '',
+      newPassword: '',
+      confirmPassword: '',
+      hasPassword: false   // 标记用户是否已设置密码
+    },
+    created() {
+      this.loadUserProfile();
+    },
+    methods: {
+      loadUserProfile() {
+        const userId = localStorage.getItem("userId");
+        if (!userId) {
+          this.$message.error("未登录");
+          setTimeout(() => location.href = "login.html", 1000);
+          return;
+        }
+        axios.get(`/user/info/${userId}`)
+        .then(({data}) => {
+            const profile = data;
+            this.user = {
+              id: profile.id,
+              nickName: profile.nickName,
+              icon: profile.icon
+            };
+            this.info = {
+              introduce: profile.introduce,
+              city: profile.city,
+              gender: profile.gender,
+              birthday: profile.birthday
+            };
+            sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+        })
+      },
+      // 头像上传前的校验
+      beforeAvatarUpload(file) {
+        const isJPG = file.type === 'image/jpeg' || file.type === 'image/png';
+        const isLt2M = file.size / 1024 / 1024 < 2;
+        if (!isJPG) {
+          this.$message.error('上传头像图片只能是 JPG 或 PNG 格式!');
+        }
+        if (!isLt2M) {
+          this.$message.error('上传头像图片大小不能超过 2MB!');
+        }
+        return isJPG && isLt2M;
+      },
+      editAvatar() {
+        // 检查 token 是否存在（可选）
+        const token = sessionStorage.getItem("token");
+        this.uploadHeaders = {'authorization': token};
+        this.avatarDialogVisible = true;
+        this.imageUrl = this.user.icon || '';
+      },
+      // 头像上传成功回调
+      handleAvatarSuccess(response, file) {
+        // 注意：第一个参数 response 是后端返回的完整 JSON 对象
+        if (response.success) {
+          // 正确获取图片路径：response.data 就是 "/uploads/avatars/xxx.png"
+          const newIcon = response.data;
+          this.imageUrl = newIcon;
+          this.$message.success('头像上传成功');
+          this.avatarDialogVisible = false;
+          // 更新本地 user.icon
+          this.user.icon = newIcon;
+          // 调用更新接口保存到数据库
+          axios.put('/user/me', { icon: newIcon })
+          .then(() => {
+            // 刷新用户信息（可选，确保数据同步）
+            this.loadUserProfile();
+          })
+          .catch(err => {
+            this.$message.error('保存头像失败：' + (err.message || '未知错误'));
+          });
+        } else {
+        this.$message.error(response.msg || '上传失败');
+        }
+      },
+      // 编辑昵称
+      editNickName() {
+        this.newNickName = this.user.nickName || '';
+        this.nickNameDialogVisible = true;
+      },
+      submitNickName() {
+        if (!this.newNickName.trim()) {
+          this.$message.warning('昵称不能为空');
+          return;
+        }
+        axios.put('/user/me', { nickName: this.newNickName })
+        .then(() => {
+          this.$message.success('修改成功');
+          this.nickNameDialogVisible = false;
+          this.user.nickName = this.newNickName;
+        })
+      },
+      // 编辑个人介绍
+      editIntroduce() {
+        this.newIntroduce = this.info.introduce || '';
+        this.introduceDialogVisible = true;
+      },
+      submitIntroduce() {
+        axios.put('/user/info', { introduce: this.newIntroduce })
+          .then(res => {
+            if (res.code === 200 || res.success) {
+              this.$message.success('修改成功');
+              this.introduceDialogVisible = false;
+              this.info.introduce = this.newIntroduce;
+              sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+            } else {
+              this.$message.error(data.msg || '修改失败');
+            }
+          })
+          .catch(err => {
+            this.$message.error('请求失败：' + (err.message || '未知错误'));
+          });
+      },
+      // 编辑性别
+      editGender() {
+        this.newGender = this.info.gender || '';
+        this.genderDialogVisible = true;
+      },
+      submitGender() {
+        axios.put('/user/info', { gender: this.newGender })
+          .then(res => {
+            if (res.code === 200 || res.success) {
+              this.$message.success('修改成功');
+              this.genderDialogVisible = false;
+              this.info.gender = this.newGender;
+              sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+              this.loadUserProfile();
+            } else {
+              this.$message.error(data.msg || '修改失败');
+            }
+          })
+          .catch(err => {
+            this.$message.error('请求失败：' + (err.message || '未知错误'));
+          });
+      },
+      // 编辑城市
+      editCity() {
+        this.newCity = this.info.city || '';
+        this.cityDialogVisible = true;
+      },
+      submitCity() {
+        axios.put('/user/info', { city: this.newCity })
+          .then(res => {
+            if (res.code === 200 || res.success) {
+              this.$message.success('修改成功');
+              this.cityDialogVisible = false;
+              this.info.city = this.newCity;
+              sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+            } else {
+              this.$message.error(data.msg || '修改失败');
+            }
+          })
+          .catch(err => {
+            this.$message.error('请求失败：' + (err.message || '未知错误'));
+          });
+      },
+      // 编辑生日
+      editBirthday() {
+        this.newBirthday = this.info.birthday || '';
+        this.birthdayDialogVisible = true;
+      },
+      submitBirthday() {
+        axios.put('/user/info', { birthday: this.newBirthday })
+          .then(res => {
+            if (res.code === 200 || res.success) {
+              this.$message.success('修改成功');
+              this.birthdayDialogVisible = false;
+              this.info.birthday = this.newBirthday;
+              sessionStorage.setItem("userInfo", JSON.stringify(this.info));
+            } else {
+              this.$message.error(data.msg || '修改失败');
+            }
+          })
+          .catch(err => {
+            this.$message.error('请求失败：' + (err.message || '未知错误'));
+          });
+      },
+      editPassword() {
+      // 先获取用户是否有密码（调用 /user/me）
+      axios.get('/user/me')
+      .then(({data}) => {
+        if (data && data.password && data.password !== '') {
+          this.hasPassword = true;
+        } else {
+          this.hasPassword = false;
+        }
+        this.oldPassword = '';
+        this.newPassword = '';
+        this.confirmPassword = '';
+        this.passwordDialogVisible = true;
+      })
+      .catch(() => {
+        this.hasPassword = false;
+        this.passwordDialogVisible = true;
+      });
+      },
+      submitPassword() {
+        if (!this.newPassword) {
+        this.$message.warning('请输入新密码');
+        return;
+      }
+      if (this.newPassword.length < 6 || this.newPassword.length > 20) {
+        this.$message.warning('密码长度应为6-20位');
+        return;
+      }
+      if (this.newPassword !== this.confirmPassword) {
+        this.$message.warning('两次输入的密码不一致');
+        return;
+      }
+      if (this.hasPassword && !this.oldPassword) {
+        this.$message.warning('请输入原密码');
+        return;
+      }
+      axios.put('/user/password', {
+        oldPassword: this.oldPassword,
+        newPassword: this.newPassword
+      })
+      .then(({data}) => {
+      
+        this.$message.success('密码修改成功，请重新登录');
+        // 清除本地存储的token和userId
+        localStorage.removeItem('userId');
+        sessionStorage.removeItem('token');
+        // 跳转到登录页
+        setTimeout(() => {
+          location.href = '/login.html';
+        }, 1500);
+      })
+      .catch(err => {
+        this.$message.error(err.response?.data?.errorMsg || '请求失败');
+      });
+      },
+      goBack() {
+        history.back();
+      }
+    }
+  });
+</script>
+
+<style>
+  .avatar-uploader .el-upload {
+    border: 1px dashed #d9d9d9;
+    border-radius: 6px;
+    cursor: pointer;
+    position: relative;
+    overflow: hidden;
+  }
+  .avatar-uploader .el-upload:hover {
+    border-color: #409EFF;
+  }
+  .avatar-uploader-icon {
+    font-size: 28px;
+    color: #8c939d;
+    width: 120px;
+    height: 120px;
+    line-height: 120px;
+    text-align: center;
+  }
+  .avatar {
+    width: 120px;
+    height: 120px;
+    display: block;
+  }
+</style>
+</body>
+</html>

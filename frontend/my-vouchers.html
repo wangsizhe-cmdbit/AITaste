@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=0">
+  <title>AI食光</title>
+  <!-- 引入 Element UI 样式 -->
+  <link rel="stylesheet" href="./css/element.css">
+  <!-- 引入项目全局样式 -->
+  <link href="./css/main.css" rel="stylesheet">
+  <!-- 优惠券页面专属样式（可选，若没有则自动降级） -->
+  <link href="./css/my-vouchers.css" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs2@0.0.2/qrcode.min.js"></script>
+  <style type="text/css">
+      .el-tabs--bottom .el-tabs__item.is-bottom:nth-child(2), .el-tabs--bottom .el-tabs__item.is-top:nth-child(2), .el-tabs--top .el-tabs__item.is-bottom:nth-child(2), .el-tabs--top .el-tabs__item.is-top:nth-child(2) {
+          padding-left: 15px;
+      }
+
+      .el-tabs, .el-tab-pane {
+          height: 100%;
+      }
+
+      .el-tabs__header {
+          height: 10%;
+      }
+
+      .el-tabs__content {
+          height: 90%;
+      }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- 头部：与个人主页风格一致 -->
+  <div class="header">
+    <div class="header-back-btn" @click="goBack"><i class="el-icon-arrow-left"></i></div>
+    <div class="header-title">我的优惠券&nbsp;&nbsp;&nbsp;</div>
+  </div>
+
+  <!-- 使用 Element UI 的 Tabs 组件，风格统一 -->
+  <div class="content" style="margin-top: 10px;">
+    <el-tabs v-model="activeTabName" @tab-click="handleTabClick">
+      <el-tab-pane label="全部" name="all"></el-tab-pane>
+      <el-tab-pane label="未使用" name="unused"></el-tab-pane>
+      <el-tab-pane label="已使用" name="used"></el-tab-pane>
+      <el-tab-pane label="已过期" name="expired"></el-tab-pane>
+      <el-tab-pane label="已取消" name="cancelled"></el-tab-pane>
+    </el-tabs>
+
+     <!-- 加载状态 -->
+    <div v-if="loading" class="loading">加载中...</div>
+    <div v-else>
+      <div v-if="voucherList.length > 0" class="voucher-list">
+        <div v-for="item in voucherList" :key="item.id" class="voucher-card">
+          <div class="left">
+            <div class="id">{{ item.id }}</div>
+            <div class="title">{{ item.title }}</div>
+          </div>
+          <div class="right">
+            <div class="top-row">
+              <div :class="['status', statusClass(item.status)]">{{ item.statusDesc }}</div>
+              <div class="pay_value">¥{{formatPrice(item.payValue)}}</div>
+            </div>
+            <div class="shop">{{ item.shopName }}</div>
+            <div class="rules">{{ item.rules }}</div>
+            <div class="action-buttons">
+              <div class="use-btn" 
+                v-if="item.status === 0 && !isExpired(item.expireTime)" 
+                @click="openQrDialog(item)">
+                去使用
+              </div>
+              <div class="cancel-btn" 
+                v-if="item.status === 0 && !isExpired(item.expireTime)" 
+                @click="cancelOrder(item.id)">
+                取消订单
+              </div>
+            </div>
+            <div class="time" v-if="item.expireTime">有效期至：{{ formatDate(item.expireTime) }}</div>
+          </div>
+        </div>
+      </div>
+      <div v-else class="empty">暂无优惠券</div>
+    </div>
+  
+
+  <!-- 二维码核销弹窗（方案二：展示二维码 + 确认核销按钮） -->
+  <el-dialog
+    title="出示二维码核销"
+    :visible.sync="qrDialogVisible"
+    width="85%"
+    class="qr-dialog"
+    :close-on-click-modal="false"
+    @opened="generateQRCode"
+    @close="onDialogClose">
+    <div class="qr-container">
+      <div class="voucher-title-in-dialog">{{ currentVoucher.title }}</div>
+      <div class="qr-box" id="qrcode-container"></div>
+      <div class="voucher-code">
+        券码：{{ currentVoucher.codeDisplay }}
+      </div>
+      <div class="qr-tip">请店员扫描二维码，或手动输入券码</div>
+      <div class="action-buttons-dialog">
+        <el-button type="primary" @click="confirmUseVoucher" size="medium">确认已核销</el-button>
+        <el-button @click="qrDialogVisible = false" size="medium">取 消</el-button>
+      </div>
+    </div>
+  </el-dialog>
+</div>
+
+<!-- 引入依赖 -->
+<script src="./js/vue.js"></script>
+<script src="./js/axios.min.js"></script>
+<script src="./js/element.js"></script>
+<script src="./js/common.js"></script>
+
+<script>
+  new Vue({
+    el: '#app',
+    data: {
+      activeTabName: 'all',       // 当前选中的 tab 名称
+      statusMap: {                // tab名称 -> 状态码映射
+        all: null,
+        unused: 0,
+        used: 1,
+        expired: 2,
+        cancelled: 3
+      },
+      voucherList: [],
+      loading: false,
+      // 二维码弹窗相关
+      qrDialogVisible: false,
+      currentVoucher: {
+        id: null,
+        title: '',
+        codeDisplay: '',
+        qrContent: ''      // 二维码内容（基于订单ID）
+      },
+      currentQRInstance: null      // 保存二维码实例
+    },
+    mounted() {
+      // 页面加载完成后自动请求全部优惠券
+      this.loadVouchers();
+    },
+    methods: {
+      // 返回上一页
+      goBack() {
+        history.back();
+      },
+      // Tab 切换事件：点击不同标签时请求对应状态的优惠券
+      handleTabClick(tab) {
+        const status = this.statusMap[tab.name];
+        this.loadVouchers(status);
+      },
+      // 加载优惠券数据（status 为 null 表示全部）
+      async loadVouchers(status = null) {
+        if (this.loading) return;
+        this.loading = true;
+        try {
+          let url = '/voucher-order/user/vouchers';
+          if (status !== null) url = `/voucher-order/user/vouchers/status?status=${status}`;
+          const response = await axios.get(url);
+          let list = [];
+          if (response.data && response.data.success) {
+          list = response.data.data;
+          } else {
+          list = Array.isArray(response.data) ? response.data : [];
+          }
+          const statusOrder = { 0: 1, 1: 2, 2: 3, 3: 4 };
+          list.sort((a, b) => {
+            const orderA = statusOrder[a.status] || 99;
+            const orderB = statusOrder[b.status] || 99;
+            if (orderA !== orderB) return orderA - orderB;
+            // 同状态内按创建时间倒序（最新的在前）
+            return new Date(b.createTime) - new Date(a.createTime);
+          });
+          this.voucherList = list;
+        } catch (error) {
+        console.error('请求失败', error);
+        this.$message.error('网络异常');
+        this.voucherList = [];
+        } finally {
+        this.loading = false;
+        }
+      },
+      // 根据状态数字返回 CSS 类名
+      statusClass(status) {
+        if (status === 0) return 'unused';
+        if (status === 1) return 'used';
+        if (status === 2) return 'expired';
+        if (status === 3) return 'cancelled';
+      },
+      // 格式化日期（YYYY-MM-DD）
+      formatDate(dateStr) {
+        if (!dateStr) return '';
+        return dateStr.substring(0, 10);
+      },
+      formatPrice(cents) {
+        if (cents === null || cents === undefined) return '0.00';
+        return (cents / 100).toFixed(2);
+      },
+      isExpired(expireTime) {
+        if (!expireTime) return false;
+        return new Date(expireTime) < new Date(); 
+      },
+      // 打开二维码弹窗（基于优惠券ID生成固定二维码内容）
+      openQrDialog(voucher) {
+        const qrContent = voucher.qrCode;   // 从后端获取
+        if (!qrContent) {
+          this.$message.error('二维码信息缺失');
+          return;
+        }
+        // 保存当前选中的优惠券信息
+        this.currentVoucher = {
+          id: voucher.id,
+          title: voucher.title,
+          codeDisplay: qrContent,   
+          qrContent: qrContent
+        };
+        // 清除旧的二维码实例
+        if (this.currentQRInstance) {
+          const container = document.getElementById('qrcode-container');
+          if (container) container.innerHTML = '';
+          this.currentQRInstance = null;
+        }
+        // 显示弹窗
+        this.qrDialogVisible = true;
+      },
+      // 弹窗完全打开后生成二维码（保证DOM已渲染）
+      generateQRCode() {
+        const container = document.getElementById('qrcode-container');
+        if (!container) return;
+        // 清空之前的二维码（如果有残留）
+        container.innerHTML = '';
+        const qrText = this.currentVoucher.qrContent;
+        if (!qrText) return;
+        try {
+          // 使用 qrcodejs2 库生成二维码，尺寸适中
+          this.currentQRInstance = new QRCode(container, {
+            text: qrText,
+            width: 200,
+            height: 200,
+            colorDark: "#000000",
+            colorLight: "#ffffff",
+            correctLevel: QRCode.CorrectLevel.L
+          });
+        } catch (err) {
+          console.error('生成二维码失败', err);
+          // 降级：显示文本
+          container.innerHTML = `<div style="padding:20px;background:#f0f0f0;">二维码生成失败<br>券码：${this.currentVoucher.codeDisplay}</div>`;
+        }
+      },
+      // 确认核销（调用后端接口）
+      async confirmUseVoucher() {
+        const orderId = this.currentVoucher.id;
+        if (!orderId) {
+          this.$message.error('无效的订单信息');
+          this.qrDialogVisible = false;
+          return;
+        }
+        try {
+          // 调用核销接口
+          const response = await axios.post('/voucher-order/use', { orderId });
+          // 核销成功后的处理
+          this.$message.success('核销成功！');
+          this.qrDialogVisible = false;
+          // 刷新当前列表（保持当前选中的 tab）
+          const currentStatus = this.statusMap[this.activeTabName];
+          this.loadVouchers(currentStatus);
+        } catch (error) {
+          console.error('核销失败', error);
+          // 处理可能的业务错误
+          let errMsg = '核销失败，请稍后重试';
+          if (error.response && error.response.data && error.response.data.message) {
+            errMsg = error.response.data.message;
+          } else if (error.message) {
+            errMsg = error.message;
+          }
+          this.$message.error(errMsg);
+          // 核销失败不关闭弹窗，让用户可以再次尝试或取消
+        }
+      },
+      onDialogClose() {
+        // 关闭弹窗时清理二维码实例
+        if (this.currentQRInstance) {
+          const container = document.getElementById('qrcode-container');
+          if (container) container.innerHTML = '';
+          this.currentQRInstance = null;
+        }
+      },
+      async cancelOrder(orderId) {
+        try {
+          await this.$confirm('确认取消这张优惠券吗？取消后优惠券将作废且不可恢复。', '提示', {
+          confirmButtonText: '确定',
+          cancelButtonText: '取消',
+          type: 'warning'
+          });
+          const response = await axios.put('/voucher-order/cancel', { orderId });
+          this.$message.success('取消成功');
+          // 刷新当前列表
+          const currentStatus = this.statusMap[this.activeTabName];
+          this.loadVouchers(currentStatus);
+        } catch (error) {
+          if (error !== 'cancel') {
+            console.error('取消失败', error);
+            this.$message.error('网络异常，请稍后重试');
+          }
+        }
+      }
+    }
+  });
+</script>
+</body>
+</html>
