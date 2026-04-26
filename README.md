@@ -18,6 +18,68 @@
 
 ---
 
+## ✨ 项目展示
+
+<div align="center">
+  <p><strong>首页</strong></p>
+  <img src="screenshots/index.png" alt="首页截图" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI查询推荐店铺列表</strong></p>
+  <img src="screenshots/queryshops.png" alt="AI查询推荐店铺列表" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI查询店铺优惠券</strong></p>
+  <img src="screenshots/queryVouchers.png" alt="AI查询店铺优惠券" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI购买指定优惠券</strong></p>
+  <img src="screenshots/createOrder.png" alt="AI购买指定优惠券" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI生成优惠券二维码</strong></p>
+  <img src="screenshots/getVoucherQrCode.png" alt="AI生成优惠券二维码" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI查询已购买的优惠券订单1</strong></p>
+  <img src="screenshots/queryMyOrders1.png" alt="AI查询已购买的优惠券订单1" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI查询已购买的优惠券订单2</strong></p>
+  <img src="screenshots/queryMyOrders2.png" alt="AI查询已购买的优惠券订单2" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI查询已购买的优惠券订单3</strong></p>
+  <img src="screenshots/queryMyOrders3.png" alt="AI查询已购买的优惠券订单3" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI取消优惠券订单</strong></p>
+  <img src="screenshots/cancelOrder.png" alt="AI取消优惠券订单" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI获取当前购物车以及用户可用优惠券</strong></p>
+  <img src="screenshots/getCartWithVouchers.png" alt="AI获取当前购物车以及用户可用优惠券" width="600">
+</div>
+
+<div align="center">
+  <p><strong>AI结算当前购物车</strong></p>
+  <img src="screenshots/checkoutWithVoucher.png" alt="AI结算当前购物车" width="600">
+</div>
+
+<div align="center">
+  <p><strong>博客详情页</strong></p>
+  <img src="screenshots/blogdetail.png" alt="博客详情页" width="600">
+</div>
+
 ## 🛠 技术栈
 
 | 类别           | 技术                                                          |
